@@ -68,7 +68,7 @@ else
 fi
 
 # 優先解像度リスト（高い順）
-RESOLUTION_LIST=("1920x1080" "1280x720" "960x720" "960x544" "864x480" "800x600" "640x480" "640x360")
+RESOLUTION_LIST=("1920x1080" "1280x720" "640x360")
 
 # 指定解像度の最大fpsを取得する関数
 get_fps_for_resolution() {
@@ -88,8 +88,6 @@ get_fps_for_resolution() {
 
 # 解像度とfpsを決定（VIDEO_SIZE指定時はそれを最優先候補にする）
 detect_resolution() {
-    local start_index=0
-
     if [ -n "$VIDEO_SIZE" ]; then
         # 指定解像度のfpsが取得できればそれを使う
         local fps
@@ -113,7 +111,7 @@ detect_resolution() {
         fi
     done
 
-    BEST_RESOLUTION="640x480"
+    BEST_RESOLUTION="640x360"
     BEST_FPS="30"
 }
 
@@ -156,6 +154,7 @@ echo "========================="
 cleanup() {
     echo ""
     echo "配信を終了します"
+    kill -- -$$ 2>/dev/null
     exit 0
 }
 trap cleanup SIGINT SIGTERM
