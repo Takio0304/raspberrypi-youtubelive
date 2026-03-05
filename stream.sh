@@ -171,13 +171,16 @@ while true; do
 
     START_TIME=$(date +%s)
 
-    # fifo出力で接続断を自動リカバリ、音声は2chに制限
+    # 2段階パイプ: エンコーダが正しいFLV(AVC sequence header付き)をパイプ出力し、
+    # 2つ目のffmpegがfifoでRTMP送信（安定性とアスペクト比の両立）
     ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
         -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
         -map 0:v -map 1:a \
         -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
         -g "$GOP_SIZE" \
         -c:a aac -ac 2 -b:a 128k -ar 44100 \
+        -f flv pipe:1 2>"$SCRIPT_DIR/enc.log" | \
+    ffmpeg -f flv -i pipe:0 -c copy -map 0:v -map 0:a \
         -f fifo -fifo_format flv -drop_pkts_on_overflow 1 \
         -attempt_recovery 1 -recovery_wait_time 5 -recover_any_error 1 \
         "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
