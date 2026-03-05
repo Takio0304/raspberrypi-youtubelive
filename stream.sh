@@ -172,7 +172,9 @@ CLEANUP_PID=$!
 CHAT_PID=""
 if [ -n "$YOUTUBE_VIDEO_URL" ] && [ -f "$SCRIPT_DIR/chat_monitor.py" ]; then
     echo "チャット監視を起動します..."
-    python3 "$SCRIPT_DIR/chat_monitor.py" &
+    PYTHON="python3"
+    [ -f "$SCRIPT_DIR/venv/bin/python3" ] && PYTHON="$SCRIPT_DIR/venv/bin/python3"
+    "$PYTHON" "$SCRIPT_DIR/chat_monitor.py" &
     CHAT_PID=$!
 fi
 
