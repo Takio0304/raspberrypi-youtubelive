@@ -60,76 +60,48 @@ else
 fi
 echo "入力フォーマット: $INPUT_FORMAT"
 
-# カメラの入力フォーマットに応じた解像度リストを取得
+# カメラの最適な解像度とフレームレートを検出
 if [ "$INPUT_FORMAT" = "mjpeg" ]; then
     FORMAT_BLOCK=$(echo "$CAMERA_FORMATS" | sed -n '/MJPG/,/^\[/p')
 else
     FORMAT_BLOCK=$(echo "$CAMERA_FORMATS" | sed -n '/YUYV/,/^\[/p')
 fi
 
-# 優先解像度リスト（高い順）
-RESOLUTION_LIST=("1920x1080" "1280x720" "960x720" "960x544" "864x480" "800x600" "640x480" "640x360")
-
-# 指定解像度の最大fpsを取得する関数
-get_fps_for_resolution() {
-    local res="$1"
-    local block
-    block=$(echo "$FORMAT_BLOCK" | sed -n "/$res/,/Size:/p")
-    if [ -n "$block" ]; then
-        local fps
-        fps=$(echo "$block" | grep -oP '[0-9.]+(?= fps)' | head -1)
-        if [ -n "$fps" ]; then
-            echo "${fps%.*}"
-            return 0
-        fi
-    fi
-    return 1
-}
-
-# 解像度とfpsを決定（VIDEO_SIZE指定時はそれを最優先候補にする）
-detect_resolution() {
-    local start_index=0
-
-    if [ -n "$VIDEO_SIZE" ]; then
-        # 指定解像度のfpsが取得できればそれを使う
-        local fps
-        fps=$(get_fps_for_resolution "$VIDEO_SIZE")
-        if [ $? -eq 0 ]; then
-            BEST_RESOLUTION="$VIDEO_SIZE"
-            BEST_FPS="$fps"
-            return
-        fi
-        echo "警告: ${VIDEO_SIZE} はこのカメラでサポートされていません。自動検出します..."
-    fi
-
-    # 自動検出：優先解像度リストを上から試す
-    for RES in "${RESOLUTION_LIST[@]}"; do
-        local fps
-        fps=$(get_fps_for_resolution "$RES")
-        if [ $? -eq 0 ]; then
-            BEST_RESOLUTION="$RES"
-            BEST_FPS="$fps"
-            return
+if [ -n "$VIDEO_SIZE" ]; then
+    # .envで解像度が指定されている場合、そのfpsを取得
+    BEST_RESOLUTION="$VIDEO_SIZE"
+    RES_BLOCK=$(echo "$FORMAT_BLOCK" | sed -n "/$VIDEO_SIZE/,/Size:/p")
+    BEST_FPS=$(echo "$RES_BLOCK" | grep -oP '[0-9.]+(?= fps)' | head -1)
+    BEST_FPS="${BEST_FPS%.*}"
+    BEST_FPS="${BEST_FPS:-30}"
+else
+    # 自動検出：優先解像度リスト（高い順）
+    BEST_RESOLUTION=""
+    BEST_FPS=0
+    for RES in "1920x1080" "1280x720" "960x720" "960x544" "864x480" "800x600" "640x480" "640x360"; do
+        RES_BLOCK=$(echo "$FORMAT_BLOCK" | sed -n "/$RES/,/Size:/p")
+        if [ -n "$RES_BLOCK" ]; then
+            FPS=$(echo "$RES_BLOCK" | grep -oP '[0-9.]+(?= fps)' | head -1)
+            if [ -n "$FPS" ]; then
+                BEST_RESOLUTION="$RES"
+                BEST_FPS="${FPS%.*}"
+                break
+            fi
         fi
     done
+    BEST_RESOLUTION="${BEST_RESOLUTION:-640x480}"
+    BEST_FPS="${BEST_FPS:-30}"
+fi
 
-    BEST_RESOLUTION="640x480"
-    BEST_FPS="30"
-}
-
-detect_resolution
 echo "解像度: $BEST_RESOLUTION"
 echo "フレームレート: ${BEST_FPS}fps"
 
 # 解像度に応じたビットレート設定
-get_bitrate() {
-    case "$1" in
-        1920x1080) echo "4500k" ;;
-        1280x720)  echo "2000k" ;;
-        *)         echo "1000k" ;;
-    esac
-}
-VIDEO_BITRATE=$(get_bitrate "$BEST_RESOLUTION")
+case "$BEST_RESOLUTION" in
+    1920x1080) VIDEO_BITRATE="4500k" ;;
+    1280x720)  VIDEO_BITRATE="2000k" ;;
+    *)         VIDEO_BITRATE="1000k" ;;
+esac
 echo "ビットレート: $VIDEO_BITRATE"
 
 # キーフレーム間隔（2秒分）
@@ -161,66 +133,17 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # ==========================================
-# 配信実行（負荷が高い場合は品質を自動で下げる）
+# 配信実行（切断時に自動再接続）
 # ==========================================
-FAIL_COUNT=0
-
 while true; do
     echo "YouTubeライブ配信を開始します..."
-    echo "  解像度=${BEST_RESOLUTION} fps=${BEST_FPS} bitrate=${VIDEO_BITRATE}"
 
-    START_TIME=$(date +%s)
-
-    # maxrate/bufsizeでビットレートの急変動を抑制
-    # -framedrop で処理落ち時にフレームを捨てて追従
     ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
         -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
-        -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_BITRATE" -bufsize "$VIDEO_BITRATE" -pix_fmt yuv420p \
+        -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
         -g "$GOP_SIZE" \
         -c:a aac -b:a 128k -ar 44100 \
         -f flv "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
-
-    END_TIME=$(date +%s)
-    DURATION=$((END_TIME - START_TIME))
-
-    # 30秒以内に落ちた場合は負荷が高すぎる可能性
-    if [ "$DURATION" -lt 30 ]; then
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        echo "配信が ${DURATION}秒 で停止しました（連続失敗: ${FAIL_COUNT}回）"
-
-        if [ "$FAIL_COUNT" -ge 2 ]; then
-            # 現在の解像度より低い解像度にフォールバック
-            FOUND_CURRENT=false
-            NEW_RESOLUTION=""
-            for RES in "${RESOLUTION_LIST[@]}"; do
-                if [ "$FOUND_CURRENT" = true ]; then
-                    local_fps=$(get_fps_for_resolution "$RES")
-                    if [ $? -eq 0 ]; then
-                        NEW_RESOLUTION="$RES"
-                        NEW_FPS="$local_fps"
-                        break
-                    fi
-                fi
-                if [ "$RES" = "$BEST_RESOLUTION" ]; then
-                    FOUND_CURRENT=true
-                fi
-            done
-
-            if [ -n "$NEW_RESOLUTION" ]; then
-                echo "品質を下げて再試行します: ${BEST_RESOLUTION} → ${NEW_RESOLUTION}"
-                BEST_RESOLUTION="$NEW_RESOLUTION"
-                BEST_FPS="$NEW_FPS"
-                VIDEO_BITRATE=$(get_bitrate "$BEST_RESOLUTION")
-                GOP_SIZE=$((BEST_FPS * 2))
-                FAIL_COUNT=0
-            else
-                echo "これ以上品質を下げられません。10秒後に再試行します..."
-            fi
-        fi
-    else
-        # 30秒以上動いていたらカウントリセット
-        FAIL_COUNT=0
-    fi
 
     echo "配信が中断されました。10秒後に再接続します..."
     echo "終了するには Ctrl+C を押してください"
