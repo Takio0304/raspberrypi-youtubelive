@@ -152,10 +152,37 @@ echo "エンコーダ: $VIDEO_ENCODER"
 
 echo "========================="
 
+# ==========================================
+# セグメント録画の準備
+# ==========================================
+SEGMENTS_DIR="$SCRIPT_DIR/recordings/segments"
+mkdir -p "$SEGMENTS_DIR"
+
+# 古いセグメントを定期的に削除（25分以上前のファイル）
+cleanup_segments() {
+    while true; do
+        find "$SEGMENTS_DIR" -name "seg_*.ts" -mmin +25 -delete 2>/dev/null
+        sleep 60
+    done
+}
+cleanup_segments &
+CLEANUP_PID=$!
+
+# チャット監視を起動（YOUTUBE_VIDEO_URLが設定されている場合）
+CHAT_PID=""
+if [ -n "$YOUTUBE_VIDEO_URL" ] && [ -f "$SCRIPT_DIR/chat_monitor.py" ]; then
+    echo "チャット監視を起動します..."
+    python3 "$SCRIPT_DIR/chat_monitor.py" &
+    CHAT_PID=$!
+fi
+
 # Ctrl+Cで確実に終了するためのシグナル処理
 cleanup() {
     echo ""
     echo "配信を終了します"
+    [ -n "$CLEANUP_PID" ] && kill "$CLEANUP_PID" 2>/dev/null
+    [ -n "$CHAT_PID" ] && kill "$CHAT_PID" 2>/dev/null
+    kill -- -$$ 2>/dev/null
     exit 0
 }
 trap cleanup SIGINT SIGTERM
@@ -171,8 +198,7 @@ while true; do
 
     START_TIME=$(date +%s)
 
-    # 2段階パイプ: エンコーダが正しいFLV(AVC sequence header付き)をパイプ出力し、
-    # 2つ目のffmpegがfifoでRTMP送信（安定性とアスペクト比の両立）
+    # 3段階パイプ: エンコード → teeで分岐（セグメント録画 + RTMP配信）
     ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
         -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
         -map 0:v -map 1:a \
@@ -180,6 +206,10 @@ while true; do
         -g "$GOP_SIZE" \
         -c:a aac -ac 2 -b:a 128k -ar 44100 \
         -f flv pipe:1 2>"$SCRIPT_DIR/enc.log" | \
+    tee --output-error=warn \
+        >(ffmpeg -f flv -i - -c copy \
+            -f segment -segment_time 300 -strftime 1 -reset_timestamps 1 \
+            "$SEGMENTS_DIR/seg_%Y%m%d_%H%M%S.ts" >/dev/null 2>"$SCRIPT_DIR/rec.log") | \
     ffmpeg -f flv -i pipe:0 -c copy -map 0:v -map 0:a \
         -f fifo -fifo_format flv -drop_pkts_on_overflow 1 \
         -attempt_recovery 1 -recovery_wait_time 5 -recover_any_error 1 \
