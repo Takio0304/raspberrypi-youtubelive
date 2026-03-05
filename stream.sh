@@ -171,13 +171,15 @@ while true; do
 
     START_TIME=$(date +%s)
 
-    # maxrate/bufsizeでビットレートの急変動を抑制
+    # fifo出力で接続断を自動リカバリ、音声は2chに制限
     ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
         -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
-        -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -maxrate "$VIDEO_BITRATE" -bufsize "$VIDEO_BITRATE" -pix_fmt yuv420p \
+        -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
         -g "$GOP_SIZE" \
-        -c:a aac -b:a 128k -ar 44100 \
-        -f flv "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
+        -c:a aac -ac 2 -b:a 128k -ar 44100 \
+        -f fifo -fifo_format flv -drop_pkts_on_overflow 1 \
+        -attempt_recovery 1 -recovery_wait_time 5 -recover_any_error 1 \
+        "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
 
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
