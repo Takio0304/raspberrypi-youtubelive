@@ -178,7 +178,9 @@ while true; do
         -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
         -g "$GOP_SIZE" \
         -c:a aac -ac 2 -b:a 128k -ar 44100 \
-        -f flv "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
+        -f fifo -fifo_format flv -drop_pkts_on_overflow 1 \
+        -attempt_recovery 1 -recovery_wait_time 5 -recover_any_error 1 \
+        "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
 
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
