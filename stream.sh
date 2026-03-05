@@ -19,7 +19,7 @@ if [ -z "$STREAM_KEY" ] || [ "$STREAM_KEY" = "xxxx-xxxx-xxxx-xxxx" ]; then
 fi
 
 # マイクデバイスのデフォルト値
-AUDIO_DEVICE="${AUDIO_DEVICE:-hw:1,0}"
+AUDIO_DEVICE="${AUDIO_DEVICE:-hw:3,0}"
 
 # 必要なコマンドの確認
 if ! command -v ffmpeg &> /dev/null; then
@@ -42,7 +42,7 @@ trap cleanup SIGINT SIGTERM
 while true; do
     echo "YouTubeライブ配信を開始します..."
 
-    ffmpeg -f v4l2 -thread_queue_size 512 -video_size 1280x720 -framerate 30 -i /dev/video0 \
+    ffmpeg -f v4l2 -input_format mjpeg -thread_queue_size 512 -video_size 1280x720 -framerate 30 -i /dev/video0 \
         -f alsa -thread_queue_size 512 -i "$AUDIO_DEVICE" \
         -c:v h264_v4l2m2m -b:v 2000k -pix_fmt yuv420p \
         -g 60 \
