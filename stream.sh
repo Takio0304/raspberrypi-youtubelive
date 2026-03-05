@@ -63,7 +63,7 @@ else
 fi
 
 # 優先解像度リスト（高い順）
-for RES in "1280x720" "960x720" "960x544" "864x480" "800x600" "640x480" "640x360"; do
+for RES in "1920x1080" "1280x720" "960x720" "960x544" "864x480" "800x600" "640x480" "640x360"; do
     RES_BLOCK=$(echo "$FORMAT_BLOCK" | sed -n "/$RES/,/Size:/p")
     if [ -n "$RES_BLOCK" ]; then
         FPS=$(echo "$RES_BLOCK" | grep -oP '[0-9.]+(?= fps)' | head -1)
@@ -81,6 +81,14 @@ BEST_FPS="${BEST_FPS:-30}"
 
 echo "解像度: $BEST_RESOLUTION"
 echo "フレームレート: ${BEST_FPS}fps"
+
+# 解像度に応じたビットレート設定
+case "$BEST_RESOLUTION" in
+    1920x1080) VIDEO_BITRATE="4500k" ;;
+    1280x720)  VIDEO_BITRATE="2000k" ;;
+    *)         VIDEO_BITRATE="1000k" ;;
+esac
+echo "ビットレート: $VIDEO_BITRATE"
 
 # キーフレーム間隔（2秒分）
 GOP_SIZE=$((BEST_FPS * 2))
@@ -118,7 +126,7 @@ while true; do
 
     ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
         -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
-        -c:v $VIDEO_ENCODER -b:v 2000k -pix_fmt yuv420p \
+        -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
         -g "$GOP_SIZE" \
         -c:a aac -b:a 128k -ar 44100 \
         -f flv "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
