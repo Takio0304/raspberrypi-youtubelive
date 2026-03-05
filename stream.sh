@@ -15,9 +15,6 @@ fi
 pkill -f "ffmpeg.*rtmp://.*youtube" 2>/dev/null
 sleep 1
 
-# 前回のログファイルを削除
-rm -f /tmp/stream_output.log
-
 # .envファイルの読み込み
 if [ -f "$SCRIPT_DIR/.env" ]; then
     source "$SCRIPT_DIR/.env"
