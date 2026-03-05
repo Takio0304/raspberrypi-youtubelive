@@ -6,6 +6,15 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# 既存の配信プロセスを停止
+EXISTING=$(pgrep -f "stream.sh" | grep -v $$)
+if [ -n "$EXISTING" ]; then
+    echo "既存の配信プロセスを停止します..."
+    kill $EXISTING 2>/dev/null
+fi
+pkill -f "ffmpeg.*rtmp://.*youtube" 2>/dev/null
+sleep 1
+
 # .envファイルの読み込み
 if [ -f "$SCRIPT_DIR/.env" ]; then
     source "$SCRIPT_DIR/.env"
