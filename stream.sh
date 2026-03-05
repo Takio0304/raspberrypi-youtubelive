@@ -52,32 +52,37 @@ fi
 echo "入力フォーマット: $INPUT_FORMAT"
 
 # カメラの最適な解像度とフレームレートを検出
-# 選択した入力フォーマットのブロックから、解像度とfpsを取得
-BEST_RESOLUTION=""
-BEST_FPS=0
-
 if [ "$INPUT_FORMAT" = "mjpeg" ]; then
     FORMAT_BLOCK=$(echo "$CAMERA_FORMATS" | sed -n '/MJPG/,/^\[/p')
 else
     FORMAT_BLOCK=$(echo "$CAMERA_FORMATS" | sed -n '/YUYV/,/^\[/p')
 fi
 
-# 優先解像度リスト（高い順）
-for RES in "1920x1080" "1280x720" "960x720" "960x544" "864x480" "800x600" "640x480" "640x360"; do
-    RES_BLOCK=$(echo "$FORMAT_BLOCK" | sed -n "/$RES/,/Size:/p")
-    if [ -n "$RES_BLOCK" ]; then
-        FPS=$(echo "$RES_BLOCK" | grep -oP '[0-9.]+(?= fps)' | head -1)
-        if [ -n "$FPS" ]; then
-            BEST_RESOLUTION="$RES"
-            BEST_FPS="${FPS%.*}"
-            break
+if [ -n "$VIDEO_SIZE" ]; then
+    # .envで解像度が指定されている場合、そのfpsを取得
+    BEST_RESOLUTION="$VIDEO_SIZE"
+    RES_BLOCK=$(echo "$FORMAT_BLOCK" | sed -n "/$VIDEO_SIZE/,/Size:/p")
+    BEST_FPS=$(echo "$RES_BLOCK" | grep -oP '[0-9.]+(?= fps)' | head -1)
+    BEST_FPS="${BEST_FPS%.*}"
+    BEST_FPS="${BEST_FPS:-30}"
+else
+    # 自動検出：優先解像度リスト（高い順）
+    BEST_RESOLUTION=""
+    BEST_FPS=0
+    for RES in "1920x1080" "1280x720" "960x720" "960x544" "864x480" "800x600" "640x480" "640x360"; do
+        RES_BLOCK=$(echo "$FORMAT_BLOCK" | sed -n "/$RES/,/Size:/p")
+        if [ -n "$RES_BLOCK" ]; then
+            FPS=$(echo "$RES_BLOCK" | grep -oP '[0-9.]+(?= fps)' | head -1)
+            if [ -n "$FPS" ]; then
+                BEST_RESOLUTION="$RES"
+                BEST_FPS="${FPS%.*}"
+                break
+            fi
         fi
-    fi
-done
-
-# 検出できなかった場合のデフォルト
-BEST_RESOLUTION="${BEST_RESOLUTION:-640x480}"
-BEST_FPS="${BEST_FPS:-30}"
+    done
+    BEST_RESOLUTION="${BEST_RESOLUTION:-640x480}"
+    BEST_FPS="${BEST_FPS:-30}"
+fi
 
 echo "解像度: $BEST_RESOLUTION"
 echo "フレームレート: ${BEST_FPS}fps"
