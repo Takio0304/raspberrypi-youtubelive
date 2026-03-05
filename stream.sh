@@ -31,6 +31,9 @@ fi
 VIDEO_DEVICE="${VIDEO_DEVICE:-/dev/video0}"
 AUDIO_DEVICE="${AUDIO_DEVICE:-hw:3,0}"
 
+# hw:X,Y → plughw:X,Y に変換（ALSAが自動でフォーマット変換してくれる）
+ALSA_DEVICE="${AUDIO_DEVICE/hw:/plughw:}"
+
 echo "=== デバイス自動検出 ==="
 
 # カメラの存在確認
@@ -85,7 +88,7 @@ GOP_SIZE=$((BEST_FPS * 2))
 # マイクのチャンネル数を自動検出
 AUDIO_CHANNELS=$(arecord -D "$AUDIO_DEVICE" --dump-hw-params 2>&1 | grep -oP 'CHANNELS: \K[0-9]+' | head -1)
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
-echo "マイク: ${AUDIO_DEVICE} (${AUDIO_CHANNELS}ch)"
+echo "マイク: ${AUDIO_DEVICE} → ${ALSA_DEVICE} (${AUDIO_CHANNELS}ch)"
 
 # エンコーダ検出（HWエンコーダ優先）
 if ffmpeg -encoders 2>/dev/null | grep -q h264_v4l2m2m; then
@@ -114,7 +117,7 @@ while true; do
     echo "YouTubeライブ配信を開始します..."
 
     ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
-        -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$AUDIO_DEVICE" \
+        -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
         -c:v $VIDEO_ENCODER -b:v 2000k -pix_fmt yuv420p \
         -g "$GOP_SIZE" \
         -c:a aac -b:a 128k -ar 44100 \
