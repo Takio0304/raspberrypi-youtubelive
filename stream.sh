@@ -176,12 +176,9 @@ while true; do
         -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
         -map 0:v -map 1:a \
         -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
-        -bsf:v h264_metadata=sample_aspect_ratio=1/1 \
         -g "$GOP_SIZE" \
         -c:a aac -ac 2 -b:a 128k -ar 44100 \
-        -f fifo -fifo_format flv -drop_pkts_on_overflow 1 \
-        -attempt_recovery 1 -recovery_wait_time 5 -recover_any_error 1 \
-        "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
+        -f flv "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
 
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
