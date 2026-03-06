@@ -7,12 +7,15 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 既存の配信プロセスを停止
-EXISTING=$(pgrep -f "stream.sh" | grep -v $$)
+EXISTING=$(pgrep -f "stream.sh" | grep -v "^$$\$")
 if [ -n "$EXISTING" ]; then
     echo "既存の配信プロセスを停止します..."
     kill $EXISTING 2>/dev/null
 fi
-pkill -f "ffmpeg.*rtmp://.*youtube" 2>/dev/null
+pkill -f "ffmpeg.*flv.*pipe" 2>/dev/null
+pkill -f "ffmpeg.*fifo.*flv" 2>/dev/null
+pkill -f "ffmpeg.*segment.*seg_" 2>/dev/null
+pkill -f "tee.*/dev/fd/" 2>/dev/null
 sleep 1
 
 # .envファイルの読み込み
@@ -184,7 +187,11 @@ cleanup() {
     echo "配信を終了します"
     [ -n "$CLEANUP_PID" ] && kill "$CLEANUP_PID" 2>/dev/null
     [ -n "$CHAT_PID" ] && kill "$CHAT_PID" 2>/dev/null
-    kill -- -$$ 2>/dev/null
+    pkill -P $$ 2>/dev/null
+    pkill -f "ffmpeg.*flv.*pipe" 2>/dev/null
+    pkill -f "ffmpeg.*fifo.*flv" 2>/dev/null
+    pkill -f "ffmpeg.*segment.*seg_" 2>/dev/null
+    pkill -f "tee.*/dev/fd/" 2>/dev/null
     exit 0
 }
 trap cleanup SIGINT SIGTERM
@@ -208,14 +215,14 @@ while true; do
         -g "$GOP_SIZE" \
         -c:a aac -ac 2 -b:a 128k -ar 44100 \
         -f flv pipe:1 2>"$SCRIPT_DIR/enc.log" | \
-    tee --output-error=warn \
-        >(ffmpeg -f flv -i - -c copy \
+    tee >(ffmpeg -f flv -i - -c copy \
             -f segment -segment_time 300 -strftime 1 -reset_timestamps 1 \
             "$SEGMENTS_DIR/seg_%Y%m%d_%H%M%S.ts" >/dev/null 2>"$SCRIPT_DIR/rec.log") | \
     ffmpeg -f flv -i pipe:0 -c copy -map 0:v -map 0:a \
         -f fifo -fifo_format flv -drop_pkts_on_overflow 1 \
         -attempt_recovery 1 -recovery_wait_time 5 -recover_any_error 1 \
-        "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
+        -max_recovery_attempts 12 \
+        "rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY" 2>"$SCRIPT_DIR/mux.log"
 
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
