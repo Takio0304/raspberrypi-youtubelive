@@ -208,7 +208,10 @@ while true; do
     START_TIME=$(date +%s)
 
     # 3段階パイプ: エンコード → teeで分岐（セグメント録画 + RTMP配信）
-    ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
+    # RESTART_INTERVAL が設定されていれば、指定秒数後にパイプを終了して再起動
+    TIMEOUT_CMD=""
+    [ -n "$RESTART_INTERVAL" ] && TIMEOUT_CMD="timeout $RESTART_INTERVAL"
+    $TIMEOUT_CMD ffmpeg -f v4l2 -input_format "$INPUT_FORMAT" -thread_queue_size 512 -video_size "$BEST_RESOLUTION" -framerate "$BEST_FPS" -i "$VIDEO_DEVICE" \
         -f alsa -ac "$AUDIO_CHANNELS" -thread_queue_size 512 -i "$ALSA_DEVICE" \
         -map 0:v -map 1:a \
         -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
