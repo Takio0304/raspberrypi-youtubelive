@@ -138,7 +138,8 @@ GOP_SIZE=$((BEST_FPS * 2))
 # マイクのチャンネル数を自動検出
 AUDIO_CHANNELS=$(arecord -D "$AUDIO_DEVICE" --dump-hw-params 2>&1 | grep -oP 'CHANNELS: \K[0-9]+' | head -1)
 AUDIO_CHANNELS="${AUDIO_CHANNELS:-1}"
-echo "マイク: ${AUDIO_DEVICE} → ${ALSA_DEVICE} (${AUDIO_CHANNELS}ch)"
+AUDIO_VOLUME="${AUDIO_VOLUME:-5.0}"
+echo "マイク: ${AUDIO_DEVICE} → ${ALSA_DEVICE} (${AUDIO_CHANNELS}ch, 音量${AUDIO_VOLUME}倍)"
 
 # エンコーダ検出（HWエンコーダ優先）
 if ffmpeg -encoders 2>/dev/null | grep -q h264_v4l2m2m; then
@@ -178,6 +179,7 @@ while true; do
         -map 0:v -map 1:a \
         -c:v $VIDEO_ENCODER -b:v "$VIDEO_BITRATE" -pix_fmt yuv420p \
         -g "$GOP_SIZE" \
+        -af "volume=$AUDIO_VOLUME" \
         -c:a aac -ac 2 -b:a 128k -ar 44100 \
         -f flv pipe:1 2>"$SCRIPT_DIR/enc.log" | \
     ffmpeg -f flv -i pipe:0 -c copy -map 0:v -map 0:a \
