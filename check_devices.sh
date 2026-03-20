@@ -16,8 +16,14 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    source "$SCRIPT_DIR/.env"
+fi
+VIDEO_DEVICE="${VIDEO_DEVICE:-/dev/video0}"
+
 echo "=== カメラの対応解像度 ==="
-v4l2-ctl --list-formats-ext -d /dev/video0
+v4l2-ctl --list-formats-ext -d "$VIDEO_DEVICE"
 echo ""
 
 echo "=== マイクのデバイス一覧 ==="
